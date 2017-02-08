@@ -1,0 +1,708 @@
+<html>
+	<head>
+		<title>Flappyzard</title>
+		<style>
+			body { margin: 0; }
+			canvas { width: 100%; height: 100% }
+		</style>
+	</head>
+	<body>
+		<script src="js/three.js"></script>
+		<script src="js/THREEx.KeyboardState.js"></script>
+		<script src="js/OBJLoader.js"></script>
+		<script src="js/MTLLoader.js"></script>
+		<script src="js/DDSLoader.js"></script>
+		<script src="js/TGALoader.js"></script>
+		<script src="js/threex.daynight.js"></script>
+		<script>
+
+			<!-- GLOBAL VARS --!>
+			var depth = -90;
+			var pipeBotStart = new THREE.Vector3( 0, -30, depth); // -15 previously
+			var pipeTopStart = new THREE.Vector3( 0, 50, depth);
+			var pipeMovementSpeed = 0.5; // originally 0.6
+			var pipeGap = 10; // 7.5 //the lower the bigger (3.5 was gud)
+			var birdStart = new THREE.Vector3( 0, 0, 0);
+		    var treeRange = new THREE.Vector3( 120, pipeBotStart.y, pipeBotStart.z);
+			var loadingTime = 5;
+			// begining position
+			// var sunAngle = -1/6*Math.PI*2;
+			// the day duraction in seconds
+			var dayDuration = 40
+			// GAME VARS
+			var LOADING_SCREEN = 5;
+			var MAIN_MENU = 1;
+			var STARTING_GAME = 6;
+			var IN_GAME = 2;
+			var GAME_OVER = 3;
+			var DYING = 4;
+			var gameStatus = IN_GAME;
+			var inGame = true;
+			var trees = [];
+			// PHYSICS VARS
+			var birdVelocity = 0.0;
+			var jumpStrength = 0.38; // the higher the stronger the jump
+			var gravity = -0.02;
+
+			<!-- SCENE AND CAMERA --!>
+			var scene = new THREE.Scene();
+			var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 1000 );
+			camera.position.z = 5;
+
+			<!-- RENDERER --!>
+			var renderer = new THREE.WebGLRenderer();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+
+			<!-- CASTER --!>
+			var caster = new THREE.Raycaster();
+
+			// var totalAssets = 9;
+			// THREE.DefaultLoadingManager.onProgress = function ( item, loaded, total ) {
+			// 				    console.log( item, loaded, total );
+			// 				    if(loaded == totalAssets){
+			// 				    	gameStatus = IN_GAME;
+			// 				    	alert();
+			// 				    }
+			// 				    alert('dafak') 
+			// 				};
+
+			//////////////////////////////////////////////////////////////////////////////////
+			//		comment								//
+			//////////////////////////////////////////////////////////////////////////////////
+			// var sunAngle = -1/6*Math.PI*2;
+			// var sunAngle = -3/6*Math.PI*2;
+			var sunAngle = Math.PI/2; // 90 degrees
+			var sunAngle = Math.PI*2; // 0
+			
+			//////////////////////////////////////////////////////////////////////////////////
+			//		starfield							//
+			//////////////////////////////////////////////////////////////////////////////////
+			var starField	= new THREEx.DayNight.StarField();
+			scene.add(starField.object3d)
+			//////////////////////////////////////////////////////////////////////////////////
+			//		sunSphere							//
+			//////////////////////////////////////////////////////////////////////////////////
+			
+			var sunSphere	= new THREEx.DayNight.SunSphere()
+			scene.add( sunSphere.object3d )
+			//////////////////////////////////////////////////////////////////////////////////
+			//		directionalLight						//
+			//////////////////////////////////////////////////////////////////////////////////
+			var sunLight	= new THREEx.DayNight.SunLight()
+			scene.add( sunLight.object3d )
+			//////////////////////////////////////////////////////////////////////////////////
+			//		skydom								//
+			//////////////////////////////////////////////////////////////////////////////////
+			
+			var skydom	= new THREEx.DayNight.Skydom()
+			scene.add( skydom.object3d )
+
+			/* Floor  */    
+			var geometry = new THREE.PlaneGeometry( 600, 200, 1, 1 );
+
+			var floorTexture = new THREE.ImageUtils.loadTexture( 'textures/grass.jpg' ); 
+			floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping; 
+			floorTexture.repeat.set(16, 16);
+			var floorMaterial = new THREE.MeshPhongMaterial({map: floorTexture})
+			floorMaterial.opacity = 0.5;
+
+			// var material = new THREE.MeshPhongMaterial( { color: 0xffffff, specular: 0x009900, shininess: 30, shading: THREE.FlatShading } );
+			var floor = new THREE.Mesh( geometry, floorMaterial );
+			floor.material.side = THREE.DoubleSide;
+			// floor.rotation.x = de2ra(90);0.0174532925
+			floor.rotation.x = 90*0.0174532925;
+			floor.position.y = pipeBotStart.y;
+			scene.add( floor );
+
+			/* Sky  */    
+			// var geometry = new THREE.PlaneGeometry( 600, 100, 1, 1 );
+
+			// var skyTexture = new THREE.ImageUtils.loadTexture( 'textures/night_sky.png' ); 
+			// // floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping; 
+			// // floorTexture.repeat.set(32, 32);
+			// var skyMaterial = new THREE.MeshBasicMaterial( { map: skyTexture } );
+			// skyMaterial.opacity = 0.5;
+
+			// // var material = new THREE.MeshPhongMaterial( { color: 0xffffff, specular: 0x009900, shininess: 30, shading: THREE.FlatShading } );
+			// var sky = new THREE.Mesh( geometry, skyMaterial );
+			// // sky.material.side = THREE.DoubleSide;
+			// // floor.rotation.x = de2ra(90);0.0174532925
+			// sky.rotation.x = 30*0.0174532925;
+			// sky.position.z = pipeBotStart.z-10;
+			// scene.add( sky );
+			
+			<!-- BIRD --!>
+			var bird = null;
+			/*var loader = new THREE.JSONLoader();
+		    loader.load('./models/charizard2.json', function(geometry, materials) {
+		        bird = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial(materials));
+		        bird.position.set(birdStart.x, birdStart.y, birdStart.z);
+		        // bird.scale.set(0.1, 0.1, 0.1); // for charizard
+		        bird.rotation.y += 3.1;
+		        scene.add(bird);
+		    });*/
+// TRIAL 2
+		    // model
+
+				// var onProgress = function ( xhr ) {
+				// 	if ( xhr.lengthComputable ) {
+				// 		var percentComplete = xhr.loaded / xhr.total * 100;
+				// 		console.log( Math.round(percentComplete, 2) + '% downloaded' );
+				// 	}
+				// };
+
+				// var onError = function ( xhr ) { };
+
+				// THREE.Loader.Handlers.add( /\.dds$/i, new THREE.DDSLoader() );
+
+				// var mtlLoader = new THREE.MTLLoader();
+				// mtlLoader.load( '/models/charizard.mtl', function( materials ) {
+
+				// 	materials.preload();
+
+				// 	var objLoader = new THREE.OBJLoader();
+				// 	objLoader.setMaterials( materials );
+				// 	objLoader.load( '/models/charizard.obj', function ( object ) {
+
+				// 		bird = object;
+				// 		bird.position.set(birdStart.x, birdStart.y, birdStart.z);
+				//         bird.scale.set(0.1, 0.1, 0.1); // for charizard
+				//         bird.rotation.y += 3.1;
+				//         scene.add(bird);
+
+				// 	}, onProgress, onError );
+
+				// });
+// TRIAL 3
+			// var loader = new THREE.JSONLoader();
+		 //    loader.load('./models/charizard2.json', function(geometry) {
+		 //    	var birdTexture =  THREE.ImageUtils.loadTexture('models/charizard.png');
+		 //        bird = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({map: birdTexture}));
+		 //        bird.position.set(birdStart.x, birdStart.y, birdStart.z);
+		 //        // bird.scale.set(0.1, 0.1, 0.1); // for charizard
+		 //        // bird.rotation.y += 3.1;
+		 //        scene.add(bird);
+		 //    });
+// TRIAL 4
+			var loader = new THREE.JSONLoader();
+			var textureLoader = new THREE.TGALoader();
+		    loader.load('./models/charizard.json', function(geometry) {
+		    	var birdTexture =  textureLoader.load('textures/lizardon_0_0.tga');
+		        bird = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({map: birdTexture}));
+		        bird.position.set(birdStart.x, birdStart.y, birdStart.z);
+		        bird.scale.set(0.1, 0.1, 0.1); // for charizard
+				bird.rotation.x = -90*0.0174532925;
+		        bird.rotation.y = 180*0.0174532925;
+		        scene.add(bird);
+		    });
+		    <!-- no material yet --!>
+		    // loader.load('./models/charizard.json', function(geometry) {
+		    //     bird = new THREE.Mesh(geometry);
+		    //     bird.position.set(birdStart.x, birdStart.y, birdStart.z);
+		    //     bird.rotation.y += 3.1;
+		    //     scene.add(bird);
+		    // });
+
+		    var pipeCount = 2;
+		    var currentPipeIndex = pipeCount-1;
+		    var pipeBotArray = []
+		    var zGap = (camera.position.z - pipeBotStart.z)/pipeCount;
+		    <!-- PIPE SA BABA --!>
+		    var pipeBot = null;
+			var loader = new THREE.JSONLoader();
+		    // loader.load('./models/bird.json', function(geometry, materials) {
+		    //     bird = new THREE.Mesh(geometry, new THREE.MeshFaceMaterial(materials));
+		    //     scene.add(bird);
+		    // });
+		    <!-- no material yet --!>
+		    loader.load('./models/pipebot.json', function(geometry) {
+		    	for( var i = 0; i < pipeCount; i++ ){
+		    		// compute z gap
+		    		pipeBot = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: 0xffd700 , specular: 0x009900, shininess: 30, shading: THREE.FlatShading } ));
+			        pipeBot.position.set(pipeBotStart.x, pipeBotStart.y, pipeBotStart.z + (zGap*i));
+			        scene.add(pipeBot);
+			        pipeBotArray.push(pipeBot);
+			        alert('Models loading ;)');
+		    	}
+		    });
+		    pipeBot = pipeBotArray[currentPipeIndex];
+
+		    var pipeTopArray = []
+		    <!-- PIPE SA TAAS --!>
+		    var pipeTop = null;
+			var loader = new THREE.JSONLoader();
+		    // loader.load('./models/bird.json', function(geometry, materials) {
+		    //     bird = new THREE.Mesh(geometry, new THREE.MeshFaceMaterial(materials));
+		    //     scene.add(bird);
+		    // });
+		    <!-- no material yet --!>
+		    loader.load('./models/pipetop.json', function(geometry) {
+		        for( var i = 0; i < pipeCount; i++ ){
+		    		// compute z gap
+		    		pipeTop = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: 0xffd700 , specular: 0x009900, shininess: 30, shading: THREE.FlatShading } ));
+			        pipeTop.position.set(pipeTop.x, pipeTop.y, pipeTop.z + (zGap*i));
+			        scene.add(pipeTop);
+			        pipeTopArray.push(pipeTop);
+			        alert('Models loading ;)');
+		    	}
+		    });
+		    pipeTop = pipeTopArray[currentPipeIndex];
+
+		    <!-- TREES --!>
+			var loader = new THREE.JSONLoader();
+			var materialLoader = new THREE.MTLLoader();
+			var treeGeometry;
+			var treeMaterial;
+		    loader.load('./models/tree.json', function(geometry) {
+		    	treeGeometry = geometry;
+		    	treeMaterial =  materialLoader.load('models/tree.mtl');
+		    });
+
+		    var treeGap = 20;
+		    var numOfTrees = 100;
+		    var tree = null;
+		    for ( var i = 0; i < numOfTrees; i++){
+		        tree = new THREE.Mesh(treeGeometry, new THREE.MeshPhongMaterial({map: treeMaterial, color: 0x14351a }));
+		        tree.position.set(Math.floor(Math.random() * (treeRange.x - -treeRange.x + 1)) + -treeRange.x,
+		        				treeRange.y,
+		        				 Math.floor(Math.random() * (treeRange.z - -camera.position.z + 1)) + -camera.position.z);
+		        // Math.floor(Math.random() * 4) + 1  
+		        tree.scale.set(6, 6, 6); // ORIGINALLY 5
+		        alert('Models loading ;)');
+		        scene.add(tree);
+		        trees.push(tree);
+	    	}
+
+		    <!-- test --!>
+			// var boxGeometry = new THREE.BoxGeometry( 1, 1, 1 );
+			// var boxMaterial = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
+			// var cubeForReference = new THREE.Mesh( boxGeometry, boxMaterial );
+			// cubeForReference.position.z= -5;
+			// cubeForReference.position.x= -3;
+			// scene.add( cubeForReference );
+            
+			<!-- LISTENER --!>
+            // document.addEventListener("animate", this._onKeyUp, false);
+            
+			<!-- KEYBOARD --!>
+			var keyboard = new THREEx.KeyboardState();
+			
+			<!-- ANIMATION --!>
+			var directionUp = new THREE.Vector3(0, 0.03, 0); // amount to move per frame
+			var directionDown = new THREE.Vector3(0, -0.003, 0); // amount to move per frame
+
+			<!-- LIGHTS --!>
+			// var light = new THREE.AmbientLight(0xffffff);
+   //  		scene.add(light);
+
+   			// follows bird
+   			var birdLights = [];
+			var light = new THREE.PointLight(0xffffff, 1, 20);
+			light.position.set(bird.position.x-1, bird.position.y, bird.position.z+1);
+			birdLights.push(light);
+			scene.add(light);
+			var light = new THREE.PointLight(0xffffff, 1, 20);
+			light.position.set(bird.position.x+1, bird.position.y, bird.position.z+1);
+			birdLights.push(light);
+			scene.add(light);
+
+			// night lights
+			var nightLights = [];
+			var light = new THREE.PointLight(0xffffff, 1, 10);
+			light.position.set(-8, 5, 0);
+			nightLights.push(light);
+			scene.add(light);
+			var light = new THREE.PointLight( 0xffffff, 1, 10 ); // color, intensity, distance
+			light.position.set( -15, 15, -10 );
+			nightLights.push(light);
+			scene.add(light);
+			var light = new THREE.PointLight(0xffffff, 1, 50);
+			light.position.set(-25, 25, -30);
+			nightLights.push(light);
+			scene.add(light);
+			var light = new THREE.PointLight( 0xffffff, 1, 50 ); // color, intensity, distance
+			light.position.set( 8, 5, 0 );
+			nightLights.push(light);
+			scene.add(light);
+			var light = new THREE.PointLight( 0xffffff, 1, 50 ); // color, intensity, distance
+			light.position.set( 15, 15, -10 );
+			nightLights.push(light);
+			scene.add(light);
+			var light = new THREE.PointLight(0xffffff, 1, 50);
+			light.position.set(25, 25, -30);
+			nightLights.push(light);
+			scene.add(light);
+
+			var clock = new THREE.Clock(true);
+			var deltaTime;
+			var particleSystem = createParticleSystem();
+    		scene.add(particleSystem);
+    		var cloudSystem = createCloudSystem();
+    		scene.add(cloudSystem);
+
+    		function createCloudSystem() {
+			    var cloudCount = 200;
+			    
+			    /* generate multiple snowflakes */
+			    var clouds = new THREE.PlaneGeometry( 64, 64 );
+			  for ( var i = pipeBotStart.z-4000; i < camera.position.z; i++ ) {
+			  
+			    /* directions of snowflakes */
+			    var pX = Math.floor(Math.random() * (treeRange.x*3 - -(treeRange.x*3) + 1) + -(treeRange.x*3));
+			    // var pX = Math.floor(Math.random() * (treeRange.x - -treeRange.x + 1)) + -treeRange.x;
+					pY = Math.floor(Math.random() * (pipeTopStart.y+2 - (pipeTopStart.y-2))) + (pipeTopStart.y-2);
+					pZ = Math.floor(Math.random() * (treeRange.z - -camera.position.z + 1)) + -camera.position.z;
+				    cloud = new THREE.Vector3(pX, pY, pZ);
+		
+				// var axis = new THREE.Vector3( 0, 0, 1 );
+				// var angle = Math.PI / 2;
+		
+				// cloud.applyAxisAngle( axis, angle );
+
+			    clouds.vertices.push(cloud);
+			  }
+			  /* snowflake material */
+			  var cloudMaterial = new THREE.PointCloudMaterial({
+		            color:0xffffff,
+		            size: 100,	      
+		            map: THREE.ImageUtils.loadTexture("textures/cloud.png"),
+		            transparent:true,
+		            opacity:0.5,
+		            sizeAttenuation:false
+			    });
+		  		cloudMaterial.depthTest = true;
+		 		cloudMaterial.depthWrite = false;
+
+				  // create the particle system
+				  cloudSystem = new THREE.Points(clouds, cloudMaterial);
+				  return cloudSystem;
+			}
+
+			function animateClouds() {
+			  var verts = cloudSystem.geometry.vertices;
+			  for(var i = 0; i < verts.length; i++) {
+			    var vert = verts[i];
+			    if (vert.z > camera.position.z) {
+			      vert.z = Math.random() * pipeBotStart.z - camera.position.z;
+			    }
+			    vert.z = vert.z + ((pipeMovementSpeed * (pipeMovementSpeed*100/2)) * deltaTime);
+			  }
+			  cloudSystem.geometry.verticesNeedUpdate = true;
+			}
+
+			function createParticleSystem() {
+			    var particleCount = 200;
+			    
+			    /* generate multiple snowflakes */
+			    var particles = new THREE.Geometry();
+			  for (var p = 0; p < particleCount; p++) {
+			  
+			    /* directions of snowflakes */
+			    var pX = Math.floor(Math.random() * (treeRange.x - -treeRange.x + 1)) + -treeRange.x;
+					pY = Math.floor(Math.random() * (pipeTopStart.y - pipeBotStart.y + 1)) + pipeBotStart.y;
+					pZ = Math.floor(Math.random() * (treeRange.z - -camera.position.z + 1)) + -camera.position.z;
+				    particle = new THREE.Vector3(pX, pY, pZ);
+
+			    particles.vertices.push(particle);
+			  }
+			  /* snowflake material */
+			  var particleMaterial = new THREE.PointsMaterial({
+			    color: 0xFFFFFF, 
+			    size: 1,
+			    map: THREE.ImageUtils.loadTexture("textures/particle.png"),
+			    blending: THREE.AdditiveBlending,
+			    transparent: true,
+			  });
+		  		particleMaterial.depthTest = true;
+		 		particleMaterial.depthWrite = false;
+
+				  // create the particle system
+				  particleSystem = new THREE.Points(particles, particleMaterial);
+				  return particleSystem;
+			}
+
+			function animateParticles() {
+			  var verts = particleSystem.geometry.vertices;
+			  for(var i = 0; i < verts.length; i++) {
+			    var vert = verts[i];
+			    if (vert.z > camera.position.z) {
+			      vert.z = Math.random() * pipeBotStart.z - camera.position.z;
+			    }
+			    vert.z = vert.z + ((pipeMovementSpeed * (pipeMovementSpeed*100/2)) * deltaTime);
+			  }
+			  particleSystem.geometry.verticesNeedUpdate = true;
+			}
+
+			function setupGame() {
+				bird.position.set(birdStart.x, birdStart.y, birdStart.z);
+		        bird.scale.set(0.1, 0.1, 0.1); // for charizard
+				bird.rotation.x = -90*0.0174532925;
+		        bird.rotation.y = 180*0.0174532925;
+		        bird.rotation.z = 0;
+
+		        // reset pipes sa bot
+				for( var i = 0; i < pipeCount; i++ ){
+					pipeBot = pipeBotArray[i];
+			        pipeBot.position.set(pipeBotStart.x, pipeBotStart.y, pipeBotStart.z + (zGap*i));
+			        pipeBot.scale.set(1,1,1);
+		    	}
+
+		    	// reset pipes sa bot
+				for( var i = 0; i < pipeCount; i++ ){
+					pipeTop = pipeTopArray[i];
+			        pipeTop.position.set(pipeTopStart.x, pipeTopStart.y, pipeTopStart.z + (zGap*i));
+			        pipeTop.scale.set(1,1,1);
+		    	}
+		    	currentPipeIndex = pipeCount-1;
+		    	pipeBot = pipeBotArray[currentPipeIndex];
+		    	pipeTop = pipeTopArray[currentPipeIndex];
+
+		        camera.position.z = bird.position.z+5;
+			}
+
+			function adjustPipes(){
+
+				// pipeTop = pipeTopArray[currentPipeIndex];
+				// pipeBot = pipeBotArray[currentPipeIndex];
+
+				<!-- COMPUTE GAP BETWEEN PIPES --!>
+				// BASTA DAPAT EQUAL TO GAP NUMBER SILA
+				// Math.floor(Math.random() * 4) + 1  
+				var pipeBotScaleFactor = Math.floor(Math.random() * pipeGap) + 2 ;
+				var pipeTopScaleFactor = pipeGap-pipeBotScaleFactor;  
+
+				<!-- PIPES MANIPULATION --!>
+				
+				// check if pipe is unseen by the camera
+				// if(pipeBot.position.z >= camera.position.z){
+					pipeBot.scale.set(1,pipeBotScaleFactor,1); //scale pipe to create gap
+					pipeBot.position.y += pipeBotScaleFactor*0.5; // keep pipe relative to original starting position
+					pipeBot.position.x = pipeBotStart.x;
+					pipeBot.position.z = pipeBotStart.z;
+
+					pipeTop.scale.set(1,pipeTopScaleFactor,1); //scale pipe to create gap
+					pipeTop.position.y -= pipeTopScaleFactor*0.5; // keep pipe relative to original starting position
+					pipeTop.position.x = pipeTopStart.x;
+					pipeTop.position.z = pipeTopStart.z;
+
+
+					<!-- restore first the pipe to original size --!>
+					pipeBot.position.y = pipeBotStart.y;
+					pipeTop.position.y = pipeTopStart.y;
+
+					console.log('pipeindex: ' + currentPipeIndex);
+					// change current pipe
+					if( currentPipeIndex == 0 )
+						currentPipeIndex=pipeCount-1;
+					else currentPipeIndex--;
+					pipeBot = pipeBotArray[currentPipeIndex];
+					pipeTop = pipeTopArray[currentPipeIndex];
+				// }
+			}
+
+			function moveWorldForward(){
+				var movingPipeBot;
+				var movingPipeTop;
+
+				for(var i=0; i<pipeCount; i++){
+					movingPipeBot = pipeBotArray[i];
+					movingPipeTop = pipeTopArray[i];
+					movingPipeBot.position.z += ((pipeMovementSpeed * (pipeMovementSpeed*100/2)) * deltaTime); // move pipe towards camera
+					movingPipeTop.position.z += ((pipeMovementSpeed * (pipeMovementSpeed*100/2)) * deltaTime); // move pipe towards camera
+				}
+				<!-- MOVE FLOOR --!>
+				floorMaterial.map.offset.y -= ((pipeMovementSpeed * (pipeMovementSpeed*100/2)) * deltaTime)/13; // the lower the divisor the faster, originally 0.00005
+				<!-- MOVE TREES --!>
+				for( var i = 0; i< trees.length; i++ ){
+					trees[i].position.z +=((pipeMovementSpeed * (pipeMovementSpeed*100/2)) * deltaTime);
+					if(trees[i].position.z > camera.position.z){
+						var randomX = Math.floor(Math.random() * (treeRange.x - -treeRange.x + 1)) + -treeRange.x;
+						// give way to pipes in the middle
+						if(randomX<0)
+							randomX=randomX-6;
+						else randomX=randomX+6;
+						trees[i].position.set(randomX,
+		        				treeRange.y,
+		        				pipeBotStart.z);
+					}
+				}
+				animateParticles();
+				animateClouds();
+			}
+
+			function applyGamePhysics(){
+				<!-- APPLY GRAVITY --!>
+				birdVelocity += gravity;
+				bird.position.y += birdVelocity;
+				if( bird.position.y<pipeBotStart.y+0.5){
+					bird.position.y = pipeBotStart.y+0.5;
+					birdVelocity = 0;
+				} else 
+				if( bird.position.y>pipeTopStart.y){
+					bird.position.y = pipeTopStart.y-1;
+					birdVelocity = 0;
+				}
+			}
+
+			function rotateBird(){
+				<!-- BIRD ROTATION --!>
+				if(birdVelocity > 0){
+				    if(bird.rotation.x < -1){ //originally 1
+				       bird.rotation.x += .1; // originally .075
+				    }
+				}
+				else{
+				    if(bird.rotation.x > -2.5){ //originally -1
+				       bird.rotation.x -= .1; // originally .075
+				    }
+				}
+			}
+
+			function checkIfCollision(){
+				<!-- CHECK COLLISION --!>
+				// var dummyMesh = new THREE.Object3D();
+				// dummyMesh.position.x = bird.position.x;
+		  //       dummyMesh.position.y = bird.position.y;
+		  //       dummyMesh.position.z = bird.position.z-2;
+
+		  //       dummyMesh.rotation.x = bird.rotation.x;
+		  //       dummyMesh.rotation.y = bird.rotation.y;
+		  //       dummyMesh.rotation.z = bird.rotation.z;
+				// caster.set(dummyMesh, new THREE.Vector3(dummyMesh.position.x, dummyMesh.position.y, dummyMesh.position.z));
+				var frontMesh = new THREE.Vector3(bird.position.x, bird.position.y, bird.position.z-2);
+				caster.set(frontMesh, new THREE.Vector3(bird.position.x, bird.position.y, bird.position.z));
+
+				// Maximum distance from the origin before we consider collision
+        		var distance = 5; // 64 originally
+				var obstacles = [pipeTop, pipeBot];
+				var collisions= caster.intersectObjects( obstacles );
+
+				// if(collisions.length > 0 && collisions[0].distance<distance){ // IF COLLIDED
+				if(collisions.length > 0){ // IF COLLIDED
+					// 	alert(collisions[0].distance);
+					return true;
+				}
+				else return false;
+			}
+
+			function animateDyingBird() {
+
+				var deathDirection = new THREE.Vector3(0.07, 0.07, 0.07); // amount to move per frame
+				bird.rotation.x -= deathDirection.x;
+				bird.rotation.y -= deathDirection.y;
+				bird.rotation.z -= deathDirection.z;
+
+				if(bird.position.y>pipeBotStart.y+0.5){
+					requestAnimationFrame(animateDyingBird);
+					// alert();
+				}
+				else {
+					// alert();
+					gameStatus = GAME_OVER;
+					// cancelAnimationFrame(animateDyingBird);
+				}
+			}
+
+			function decrementLoadingTime() {
+				loadingTime--;
+				if(loadingTime>0)
+					setTimeout(decrementLoadingTime, 1000);
+			}
+
+			var render = function () {
+				requestAnimationFrame( render );
+
+				// bird.rotation.x += 0.1;
+				// bird.rotation.y += 0.1;
+
+			  	deltaTime = clock.getDelta();
+			  	// add some rotation to the system
+			  	particleSystem.rotation.z -= .1 * deltaTime;
+			  	var phase = THREEx.DayNight.currentPhase(sunAngle)
+			  	if(phase==='twilight' || phase==='night'){
+			  		cloudSystem.visible = false;
+					for(var i=0; i<nightLights.length; i++){
+						var light = nightLights[i];
+						// light.intensity = 1;
+					}
+
+			  	}
+			  	else {
+			  		cloudSystem.visible = true;
+			  		for(var i=0; i<nightLights.length; i++){
+						var light = nightLights[i];
+						// light.intensity = 0;
+					}
+			  	}
+
+			  	// day night cycle
+			  	sunAngle    += deltaTime/dayDuration * Math.PI*2
+			  	sunSphere.update(sunAngle)
+			  	sunLight.update(sunAngle)
+			  	skydom.update(sunAngle);
+			  	starField.update(sunAngle);
+
+			  	console.log(gameStatus);
+				switch(gameStatus) {
+					case LOADING_SCREEN:  
+							// decrementLoadingTime();
+
+
+							
+							// alert();
+							break;
+					case MAIN_MENU: break;
+					case STARTING_GAME:
+							setupGame();
+							gameStatus = IN_GAME;
+							break;
+					case IN_GAME:
+							if( keyboard.pressed("space") ){
+								birdVelocity=jumpStrength;
+							}
+
+							if(pipeBot.position.z >= camera.position.z){
+								adjustPipes();
+								console.log('fuck');
+							}
+							else moveWorldForward();
+							applyGamePhysics();
+							rotateBird();
+
+							<!-- CAMERA FOLLOWS THE BIRD --!>
+							camera.position.y = bird.position.y;
+							for(var i=0; i<birdLights.length; i++){
+								var light = birdLights[i];
+								light.position.y = bird.position.y;
+							}
+
+							if(checkIfCollision()){
+								requestAnimationFrame(animateDyingBird);
+								gameStatus = DYING;
+							}
+							
+							break;
+					case DYING: 
+							<!-- CAMERA FOLLOWS THE BIRD --!>
+							camera.position.y = bird.position.y;
+							for(var i=0; i<birdLights.length; i++){
+								var light = birdLights[i];
+								light.position.y = bird.position.y;
+							}
+							applyGamePhysics();
+							break;
+					case GAME_OVER: 
+							// alert('dedz ka na boi'); 
+							gameStatus = STARTING_GAME;
+							break;
+				}
+
+				renderer.render(scene, camera);
+			};
+
+			setTimeout( render(), 10000 );
+			// render();
+		</script>
+	</body>
+</html>
